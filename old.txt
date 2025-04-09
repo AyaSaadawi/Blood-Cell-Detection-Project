@@ -1,0 +1,75 @@
+import streamlit as st
+from ultralytics import YOLO
+import cv2
+import tempfile
+from PIL import Image
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Load the model (change path to your actual model file)
+model = YOLO('./model.pt')  # Update this path to the correct model file
+
+# Streamlit file uploader for images and videos
+uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
+uploaded_video = st.file_uploader("Upload a video", type=["mp4", "mov", "avi"])
+
+# Perform Predictions on Image
+if uploaded_image is not None:
+    image = Image.open(uploaded_image)
+    image = image.resize((640, 640))  # Resize the image to match input size
+    image_np = np.array(image)
+
+    # Model inference on the image
+    try:
+        results = model(image_np)  # Use model directly for inference
+        st.image(image, caption="Uploaded Image", use_column_width=True)
+        st.write(f"Prediction: {results.pandas().xywh}")  # Displaying predictions
+    except Exception as e:
+        st.error(f"Error during prediction: {e}")
+
+# Perform Predictions on Video
+if uploaded_video is not None:
+    tfile = tempfile.NamedTemporaryFile(delete=False)
+    tfile.write(uploaded_video.read())
+
+    # Use OpenCV to read the video
+    cap = cv2.VideoCapture(tfile.name)
+    stframe = st.empty()  # Placeholder for displaying video frames
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Convert the frame to RGB
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(frame_rgb)
+
+        # Model inference on the frame
+        try:
+            results = model(pil_image)  # Use model directly for inference
+            stframe.image(frame_rgb, caption="Video Frame", use_column_width=True)
+        except Exception as e:
+            st.error(f"Error during video prediction: {e}")
+
+    cap.release()
+
+# Evaluation Metrics (for validation)
+val_metrics_dict = {
+    'metrics/precision(B)': 0.8080822056139819,
+    'metrics/recall(B)': 0.892497025795111,
+    'metrics/mAP50(B)': 0.8969916883590701,
+    'metrics/mAP50-95(B)': 0.6045956315680894,
+    'fitness': 0.6338352372471875
+}
+
+metrics_df = pd.DataFrame(list(val_metrics_dict.items()), columns=['Metric', 'Value'])
+st.subheader("Evaluation Metrics")
+st.dataframe(metrics_df)
+
+# Plotting mAP50 values
+sns.barplot(x='Metric', y='Value', data=metrics_df[metrics_df['Metric'].str.contains('mAP50')])
+plt.title('mAP50 values')
+st.pyplot(plt)
